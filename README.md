@@ -49,9 +49,6 @@ SmartTradeBot/
 ├── .gitignore
 └── LICENSE
 
-yaml
-Copiar
-Editar
 
 ## 📝 Licencia
 
