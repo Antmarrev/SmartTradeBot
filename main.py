@@ -1,36 +1,115 @@
-from src.utils.data_loader import download_data
-from src.strategies.cruce_medias import cruce_medias
-import matplotlib.pyplot as plt
+"""
+SmartTraderBot — entry point.
+
+Usage:
+    python main.py
+    python main.py --config config/settings.yaml
+"""
+
+import argparse
+import logging
+import sys
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+def load_config(path: str) -> dict[str, Any]:
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    with config_path.open("r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    if config is None:
+        raise ValueError(f"Config file is empty: {config_path}")
+    if not isinstance(config, dict):
+        raise ValueError(f"Config file must be a YAML mapping, got {type(config).__name__}")
+    return config
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+def setup_logging(config: dict[str, Any]) -> None:
+    log_cfg = config.get("logging", {})
+
+    level = getattr(logging, log_cfg.get("level", "INFO").upper(), logging.INFO)
+    fmt = log_cfg.get("format", "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
+    datefmt = log_cfg.get("date_format", "%Y-%m-%d %H:%M:%S")
+
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+
+    if log_cfg.get("log_to_file", False):
+        log_file = Path(log_cfg["log_file"])
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file))
+
+    logging.basicConfig(level=level, format=fmt, datefmt=datefmt, handlers=handlers, force=True)
+
+
+# ---------------------------------------------------------------------------
+# System bootstrap
+# ---------------------------------------------------------------------------
+
+def bootstrap(config: dict[str, Any]) -> None:
+    logger = logging.getLogger(__name__)
+
+    market = config["market"]
+    backtest = config["backtest"]
+    costs = config["costs"]
+
+    logger.info("SmartTraderBot initialising")
+    logger.info(
+        "Universe: %s | Timeframe: %s | Tickers: %s",
+        market["universe"],
+        market["timeframe"],
+        ", ".join(market["default_tickers"]),
+    )
+    logger.info(
+        "Backtest window: %s → %s | Capital: $%s",
+        backtest["start_date"],
+        backtest["end_date"],
+        f"{backtest['initial_capital']:,}",
+    )
+    logger.info(
+        "Costs — commission: %.3f%% | slippage: %.3f%%",
+        costs["commission"] * 100,
+        costs["slippage"] * 100,
+    )
+    logger.info("System ready — plug in a strategy and run.")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="SmartTraderBot")
+    parser.add_argument(
+        "--config",
+        default="config/settings.yaml",
+        help="Path to the YAML configuration file (default: config/settings.yaml)",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    args = parse_args()
+    try:
+        config = load_config(args.config)
+        setup_logging(config)
+        bootstrap(config)
+    except Exception:
+        logging.getLogger(__name__).exception("Startup failed")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
-    # 1. Parámetros
-    ticker = "SPY"
-    start = "2020-01-01"
-    end = "2025-07-28"
-
-    # 2. Descargar datos
-    df = download_data(ticker, start, end, save_csv=False)
-
-    # 3. Aplicar estrategia
-    df = cruce_medias(df, short_window=10, long_window=50)
-
-    # 4. Crear gráfico
-    plt.figure(figsize=(14, 7))
-    plt.plot(df.index, df['Close'], label='Precio', color='black', alpha=0.6)
-    plt.plot(df.index, df['short_ma'], label='Media Corta (10)', color='blue')
-    plt.plot(df.index, df['long_ma'], label='Media Larga (50)', color='red')
-
-    # 5. Señales
-    buy_signals = df[df['signal'] == 1]
-    sell_signals = df[df['signal'] == -1]
-
-    plt.scatter(buy_signals.index, buy_signals['Close'], label='Compra', marker='^', color='green', s=100)
-    plt.scatter(sell_signals.index, sell_signals['Close'], label='Venta', marker='v', color='red', s=100)
-
-    plt.title(f"Estrategia de Cruce de Medias – {ticker}")
-    plt.xlabel("Fecha")
-    plt.ylabel("Precio")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    main()
